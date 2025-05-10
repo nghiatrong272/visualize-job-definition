@@ -136,13 +136,6 @@ button:hover {
   font-size: 10px;
 }
 
-.listener-label {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  margin-top: 5px;
-}
-
 .arrow-container {
   display: flex;
   justify-content: center;
@@ -236,7 +229,6 @@ body {
   word-wrap: break-word;
 }
 
-/* Adjust existing box styles */
 .box {
-  margin: 0; /* Remove margin from box since container handles it now */
+  margin: 0;
 }

@@ -1,5 +1,21 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { initializeApp } from "firebase/app";
+import { getFirestore, setDoc, doc, getDoc, Timestamp } from "firebase/firestore";
 import './App.css';
+
+const firebaseConfig = {
+  apiKey: "AIzaSyCT1p8MfDkzLAaT0Tc5uhab66PxkMuMszo",
+  authDomain: "nghialam-272.firebaseapp.com",
+  databaseURL: "https://nghialam-272.firebaseio.com",
+  projectId: "nghialam-272",
+  storageBucket: "nghialam-272.firebasestorage.app",
+  messagingSenderId: "1008901518626",
+  appId: "1:1008901518626:web:b98f838b98258e5c1de17b",
+  measurementId: "G-RFKJFQ2QCX"
+};
+
+const app = initializeApp(firebaseConfig);
+export const db = getFirestore(app);
 
 function App() {
   const defaultConfig = {
@@ -14,11 +30,47 @@ function App() {
   const [config, setConfig] = useState(null);
   const [error, setError] = useState('');
 
-  const handleVisualize = () => {
+  const saveToFirebase = async (config) => {
+    try {
+      const id = Math.random().toString(36).substr(2, 8);
+      const twoDaysLater = Timestamp.fromDate(new Date(Date.now() + 1 * 24 * 60 * 60 * 1000));
+      await setDoc(doc(db, "configs", id), {
+        config: config,
+        createdAt: Timestamp.now(),
+        expireAt: twoDaysLater
+      });
+      return id;
+    } catch (e) {
+      console.error("Lỗi lưu config:", e);
+      return null;
+    }
+  };
+
+  const loadFromFirebase = async (id) => {
+    const docSnap = await getDoc(doc(db, "configs", id));
+    if (docSnap.exists()) {
+      return docSnap.data().config;
+    }
+    return null;
+  };
+
+
+  useEffect(() => {
+    const id = window.location.hash.substring(1);
+    if (id) {
+      loadFromFirebase(id).then(config => {
+        if (config) {
+          setJsonInput(config);
+          setConfig(JSON.parse(config));
+        }
+      });
+    }
+  }, []);
+
+  const handleVisualize = async () => {
     try {
       const parsed = JSON.parse(jsonInput);
 
-      // Set default order to 0 if not specified
       parsed.tasks =
         parsed.tasks?.map((task) => ({
           ...task,
@@ -33,6 +85,20 @@ function App() {
 
       setConfig(parsed);
       setError('');
+    } catch (err) {
+      setError('Invalid JSON: ' + err.message);
+    }
+  };
+
+
+  const handleShareLink = async () => {
+    try {
+      const id = await saveToFirebase(jsonInput);
+      if (id) {
+        console.log(`${window.location.origin}/#${id}`)
+        window.location.hash = id;
+        navigator.clipboard.writeText(`${window.location.origin}/#${id}`);
+      }
     } catch (err) {
       setError('Invalid JSON: ' + err.message);
     }
@@ -69,7 +135,7 @@ function App() {
         <div className={boxClass}>
           <div className="task-name">{listener.name}</div>
           {listener.alias && <div className="task-alias">({listener.alias})</div>}
-          <div className="listener-label">Listener</div>
+          {listener.retry && <div className="task-retry">↻ {listener.retry.retryCount}</div>}
         </div>
         <div className="json-tooltip">
           <pre>{JSON.stringify(listener, null, 2)}</pre>
@@ -163,6 +229,7 @@ function App() {
           placeholder="Paste your job configuration JSON here"
         />
         <button onClick={handleVisualize}>Visualize</button>
+        <button onClick={handleShareLink}>Share</button>
       </div>
       {error && <div className="error">{error}</div>}
       {renderGroups()}
