@@ -44,25 +44,16 @@ function App() {
       isDisabled ? 'disabled' : ''
     }`;
 
-    let tooltipContent = `Type: ${task.type}\nEnabled: ${task.enable}\nOrder: ${
-      task.order ?? 0
-    }`;
-    if (task.expression) tooltipContent += `\nExpression: ${task.expression}`;
-    if (task.inputParameters)
-      tooltipContent += `\nInput: ${JSON.stringify(task.inputParameters)}`;
-    if (task.retry) tooltipContent += `\nRetry: ${task.retry.retryCount} times`;
-
     return (
-      <div
-        key={task.name + (task.alias || '')}
-        className={boxClass}
-        title={tooltipContent}
-      >
-        <div className="task-name">{task.name}</div>
-        {task.alias && <div className="task-alias">({task.alias})</div>}
-        {task.retry && (
-          <div className="task-retry">↻ {task.retry.retryCount}</div>
-        )}
+      <div key={task.name + (task.alias || '')} className="box-container">
+        <div className={boxClass}>
+          <div className="task-name">{task.name}</div>
+          {task.alias && <div className="task-alias">({task.alias})</div>}
+          {task.retry && <div className="task-retry">↻ {task.retry.retryCount}</div>}
+        </div>
+        <div className="json-tooltip">
+          <pre>{JSON.stringify(task, null, 2)}</pre>
+        </div>
       </div>
     );
   };
@@ -73,21 +64,16 @@ function App() {
       isDisabled ? 'disabled' : ''
     }`;
 
-    const tooltipContent = `Type: ${listener.type}\nEnabled: ${
-      listener.enable
-    }\nOrder: ${listener.order ?? 0}\nInput: ${JSON.stringify(
-      listener.inputParameters
-    )}`;
-
     return (
-      <div
-        key={listener.name + (listener.alias || '')}
-        className={boxClass}
-        title={tooltipContent}
-      >
-        <div className="task-name">{listener.name}</div>
-        {listener.alias && <div className="task-alias">({listener.alias})</div>}
-        <div className="listener-label">Listener</div>
+      <div key={listener.name + (listener.alias || '')} className="box-container">
+        <div className={boxClass}>
+          <div className="task-name">{listener.name}</div>
+          {listener.alias && <div className="task-alias">({listener.alias})</div>}
+          <div className="listener-label">Listener</div>
+        </div>
+        <div className="json-tooltip">
+          <pre>{JSON.stringify(listener, null, 2)}</pre>
+        </div>
       </div>
     );
   };
