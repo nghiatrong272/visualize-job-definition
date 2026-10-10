@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { initializeApp } from "firebase/app";
 import { getFirestore, setDoc, doc, getDoc, Timestamp } from "firebase/firestore";
 import './App.css';
@@ -17,6 +17,28 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
 
+const getTaskKey = (task) => task.alias || task.name;
+
+// SpEL variables that refer to the job itself rather than another task/listener.
+const NON_TASK_REFS = new Set(['job', 'input', 'env']);
+
+const extractReferences = (task, knownKeys) => {
+  const text = JSON.stringify({
+    preCondition: task.preCondition ?? null,
+    inputParams: task.inputParams ?? null,
+    outputParams: task.outputParams ?? null,
+    defaultOutput: task.defaultOutput ?? null,
+  });
+  const matches = text.match(/#([a-zA-Z_][a-zA-Z0-9_]*)/g) || [];
+  const refs = new Set();
+  matches.forEach((m) => {
+    const key = m.slice(1);
+    if (NON_TASK_REFS.has(key)) return;
+    if (knownKeys.has(key)) refs.add(key);
+  });
+  return refs;
+};
+
 function App() {
   const defaultConfig = {
     name: 'job-name',
@@ -29,6 +51,93 @@ function App() {
   );
   const [config, setConfig] = useState(null);
   const [error, setError] = useState('');
+  const [selectedBox, setSelectedBox] = useState(null);
+  const [hoveredKey, setHoveredKey] = useState(null);
+  const [fitScale, setFitScale] = useState(1);
+  const [zoomMultiplier, setZoomMultiplier] = useState(1);
+  const chartFrameRef = useRef(null);
+  const chartContentRef = useRef(null);
+
+  const MIN_ZOOM = 0.3;
+  const MAX_ZOOM = 3;
+  const effectiveScale = fitScale * zoomMultiplier;
+
+  // Auto-fit: uniformly scale the diagram (same factor on both axes, so text
+  // never distorts) down to whatever fitScale keeps it fully inside the frame.
+  // Recomputes whenever the frame (panel open/close, window resize) or the
+  // diagram's own natural size (new config, rows wrapping differently) changes.
+  useEffect(() => {
+    const frame = chartFrameRef.current;
+    const content = chartContentRef.current;
+    if (!frame || !content) {
+      setFitScale(1);
+      return;
+    }
+
+    const recomputeFit = () => {
+      const naturalWidth = content.scrollWidth;
+      const naturalHeight = content.scrollHeight;
+      const availableWidth = frame.clientWidth;
+      const availableHeight = frame.clientHeight;
+      if (!naturalWidth || !naturalHeight || !availableWidth || !availableHeight) {
+        return;
+      }
+      setFitScale(Math.min(1, availableWidth / naturalWidth, availableHeight / naturalHeight));
+    };
+
+    recomputeFit();
+
+    const observer = new ResizeObserver(recomputeFit);
+    observer.observe(frame);
+    observer.observe(content);
+    window.addEventListener('resize', recomputeFit);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', recomputeFit);
+    };
+  }, [config]);
+
+  // Reset manual zoom whenever a different config is visualized.
+  useEffect(() => {
+    setZoomMultiplier(1);
+  }, [config]);
+
+  const zoomIn = () => setZoomMultiplier((z) => Math.min(MAX_ZOOM, +(z + 0.1).toFixed(2)));
+  const zoomOut = () => setZoomMultiplier((z) => Math.max(MIN_ZOOM, +(z - 0.1).toFixed(2)));
+  const resetZoom = () => setZoomMultiplier(1);
+
+  // Dependency graph built from every task/listener's SpEL expressions:
+  // usesMap[key]   = keys this task reads output from (its dependencies)
+  // usedByMap[key] = keys that read this task's output (its dependents)
+  const { usesMap, usedByMap } = React.useMemo(() => {
+    const uses = {};
+    const usedBy = {};
+    if (!config) return { usesMap: uses, usedByMap: usedBy };
+
+    const allItems = [...(config.tasks || []), ...(config.listeners || [])];
+    const knownKeys = new Set(allItems.map(getTaskKey));
+
+    allItems.forEach((item) => {
+      const key = getTaskKey(item);
+      const refs = extractReferences(item, knownKeys);
+      uses[key] = refs;
+      refs.forEach((refKey) => {
+        if (!usedBy[refKey]) usedBy[refKey] = new Set();
+        usedBy[refKey].add(key);
+      });
+    });
+
+    return { usesMap: uses, usedByMap: usedBy };
+  }, [config]);
+
+  const getBoxHighlightClass = (task) => {
+    if (!hoveredKey) return '';
+    const key = getTaskKey(task);
+    if (key === hoveredKey) return 'highlight-self';
+    if (usesMap[hoveredKey]?.has(key)) return 'highlight-uses';
+    if (usedByMap[hoveredKey]?.has(key)) return 'highlight-used-by';
+    return 'dimmed';
+  };
 
   const saveToFirebase = async (config) => {
     try {
@@ -106,19 +215,23 @@ function App() {
 
   const renderTaskBox = (task) => {
     const isDisabled = task.enable === false;
+    const key = getTaskKey(task);
     const boxClass = `box ${task.type.toLowerCase()} ${
       isDisabled ? 'disabled' : ''
-    }`;
+    } ${selectedBox?.key === key ? 'selected' : ''}`;
 
     return (
-      <div key={task.name + (task.alias || '')} className="box-container">
+      <div
+        key={task.name + (task.alias || '')}
+        className={`box-container ${getBoxHighlightClass(task)}`}
+        onMouseEnter={() => setHoveredKey(key)}
+        onMouseLeave={() => setHoveredKey(null)}
+        onClick={() => setSelectedBox({ key, kind: 'Task', data: task })}
+      >
         <div className={boxClass}>
           <div className="task-name">{task.name}</div>
           {task.alias && <div className="task-alias">({task.alias})</div>}
           {task.retry && <div className="task-retry">↻ {task.retry.retryCount}</div>}
-        </div>
-        <div className="json-tooltip">
-          <pre>{JSON.stringify(task, null, 2)}</pre>
         </div>
       </div>
     );
@@ -126,19 +239,23 @@ function App() {
 
   const renderListenerBox = (listener) => {
     const isDisabled = listener.enable === false;
+    const key = getTaskKey(listener);
     const boxClass = `box listener-${listener.type.toLowerCase()} ${
       isDisabled ? 'disabled' : ''
-    }`;
+    } ${selectedBox?.key === key ? 'selected' : ''}`;
 
     return (
-      <div key={listener.name + (listener.alias || '')} className="box-container">
+      <div
+        key={listener.name + (listener.alias || '')}
+        className={`box-container ${getBoxHighlightClass(listener)}`}
+        onMouseEnter={() => setHoveredKey(key)}
+        onMouseLeave={() => setHoveredKey(null)}
+        onClick={() => setSelectedBox({ key, kind: 'Listener', data: listener })}
+      >
         <div className={boxClass}>
           <div className="task-name">{listener.name}</div>
           {listener.alias && <div className="task-alias">({listener.alias})</div>}
           {listener.retry && <div className="task-retry">↻ {listener.retry.retryCount}</div>}
-        </div>
-        <div className="json-tooltip">
-          <pre>{JSON.stringify(listener, null, 2)}</pre>
         </div>
       </div>
     );
@@ -174,14 +291,19 @@ function App() {
     );
 
     return (
-      <div className="visualization">
-        <h2>Job: {config.name}</h2>
-
+      <div
+        className="visualization"
+        ref={chartContentRef}
+        style={{ transform: `scale(${effectiveScale})`, transformOrigin: 'top center' }}
+      >
         <div className="tasks-flow">
           {sortedTaskOrders.map((order, index) => (
             <React.Fragment key={'task-' + order}>
-              <div className="task-group">
-                {taskGroups[order].map((task) => renderTaskBox(task))}
+              <div className="order-frame">
+                <div className="order-label">Order {order}</div>
+                <div className="task-group">
+                  {taskGroups[order].map((task) => renderTaskBox(task))}
+                </div>
               </div>
               {index < sortedTaskOrders.length - 1 && (
                 <div className="arrow-container">
@@ -198,10 +320,13 @@ function App() {
             <div className="listeners-flow">
               {sortedListenerOrders.map((order, index) => (
                 <React.Fragment key={'listener-' + order}>
-                  <div className="listener-group">
-                    {listenerGroups[order].map((listener) =>
-                      renderListenerBox(listener)
-                    )}
+                  <div className="order-frame">
+                    <div className="order-label">Order {order}</div>
+                    <div className="listener-group">
+                      {listenerGroups[order].map((listener) =>
+                        renderListenerBox(listener)
+                      )}
+                    </div>
                   </div>
                   {index < sortedListenerOrders.length - 1 && (
                     <div className="arrow-container">
@@ -218,7 +343,7 @@ function App() {
   };
 
   return (
-    <div className="app">
+    <div className={`app ${selectedBox ? 'with-panel' : ''}`}>
       <h1>Job Configuration Visualizer</h1>
       <div className="input-area">
         <textarea
@@ -232,7 +357,53 @@ function App() {
         <button onClick={handleShareLink}>Share</button>
       </div>
       {error && <div className="error">{error}</div>}
-      {renderGroups()}
+
+      <div className="layout">
+        <div className="chart-section">
+          {config && (
+            <div className="chart-header">
+              <h2>Job: {config.name}</h2>
+              <div className="zoom-controls">
+                <button onClick={zoomOut} disabled={zoomMultiplier <= MIN_ZOOM} title="Zoom out">
+                  −
+                </button>
+                <button className="zoom-reset" onClick={resetZoom} title="Reset to fit screen">
+                  {Math.round(effectiveScale * 100)}%
+                </button>
+                <button onClick={zoomIn} disabled={zoomMultiplier >= MAX_ZOOM} title="Zoom in">
+                  +
+                </button>
+              </div>
+            </div>
+          )}
+          <div
+            className="chart-frame"
+            ref={chartFrameRef}
+          >
+            {renderGroups()}
+          </div>
+        </div>
+
+        {selectedBox && (
+          <div className="detail-panel">
+            <div className="detail-panel-header">
+              <div>
+                <span className="detail-panel-kind">{selectedBox.kind}</span>
+                <span className="detail-panel-name">{selectedBox.data.name}</span>
+              </div>
+              <button
+                className="detail-panel-close"
+                onClick={() => setSelectedBox(null)}
+              >
+                ✕
+              </button>
+            </div>
+            <pre className="detail-panel-body">
+              {JSON.stringify(selectedBox.data, null, 2)}
+            </pre>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

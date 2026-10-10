@@ -1,8 +1,92 @@
 .app {
   font-family: Arial, sans-serif;
   max-width: 1200px;
+  width: 100%;
+  box-sizing: border-box;
   margin: 0 auto;
   padding: 20px;
+  transition: max-width 0.2s;
+}
+
+.app.with-panel {
+  max-width: 1600px;
+}
+
+/* The chart section always occupies a full screen's worth of height,
+   independent of how tall the input area above it is. The input area
+   stays in normal document flow and the page scrolls past it. */
+.layout {
+  display: flex;
+  align-items: stretch;
+  gap: 24px;
+  width: 100%;
+  height: 100vh;
+  box-sizing: border-box;
+  padding-bottom: 20px;
+}
+
+.chart-section {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.chart-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 2px solid #eee;
+  padding-bottom: 10px;
+  margin-bottom: 10px;
+}
+
+.chart-header h2 {
+  margin: 0;
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.chart-frame {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+}
+
+.zoom-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 4px;
+  flex-shrink: 0;
+}
+
+.zoom-controls button {
+  padding: 6px 10px;
+  font-size: 14px;
+  background-color: #f1f3f4;
+  color: #333;
+}
+
+.zoom-controls button:hover {
+  background-color: #e2e4e6;
+}
+
+.zoom-controls button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.zoom-controls .zoom-reset {
+  min-width: 52px;
+  font-weight: 600;
+  font-size: 12px;
 }
 
 h1,
@@ -62,19 +146,22 @@ button:hover {
 }
 
 .visualization {
-  margin-top: 30px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 16px 0;
 }
 
 .tasks-flow {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 20px;
+  gap: 10px;
+  width: 100%;
 }
 
 .listeners-section {
-  margin-top: 50px;
-  padding-top: 20px;
+  margin-top: 28px;
+  padding-top: 16px;
   border-top: 2px dashed #bdc3c7;
 }
 
@@ -88,7 +175,7 @@ button:hover {
 .task-group {
   display: flex;
   justify-content: center;
-  gap: 20px;
+  gap: 14px;
   flex-wrap: wrap;
 }
 
@@ -139,28 +226,29 @@ button:hover {
 .arrow-container {
   display: flex;
   justify-content: center;
-  height: 30px;
+  height: 16px;
 }
 
 .arrow-down {
   width: 0;
   height: 0;
-  border-left: 10px solid transparent;
-  border-right: 10px solid transparent;
-  border-top: 15px solid #7f8c8d;
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+  border-top: 12px solid #7f8c8d;
 }
 
 .listeners-flow {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 20px;
+  gap: 10px;
+  width: 100%;
 }
 
 .listener-group {
   display: flex;
   justify-content: center;
-  gap: 20px;
+  gap: 14px;
   flex-wrap: wrap;
 }
 
@@ -189,46 +277,123 @@ body {
   background-color: white;
 }
 
-/* Tooltip Styles */
 .box-container {
   position: relative;
   display: inline-block;
   margin: 5px;
-}
-
-.box-container:hover .json-tooltip {
-  visibility: visible;
-  opacity: 1;
-}
-
-.json-tooltip {
-  visibility: hidden;
-  width: 400px;
-  background-color: white;
-  color: #333;
-  border: 1px solid #ddd;
-  border-radius: 6px;
-  padding: 10px;
-  position: absolute;
-  z-index: 100;
-  bottom: 125%;
-  left: 50%;
-  transform: translateX(-50%);
-  opacity: 0;
-  transition: opacity 0.3s;
-  box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-  max-height: 500px;
-  overflow-y: auto;
-}
-
-.json-tooltip pre {
-  margin: 0;
-  font-family: 'Courier New', monospace;
-  font-size: 12px;
-  white-space: pre-wrap;
-  word-wrap: break-word;
+  cursor: pointer;
+  border-radius: 10px;
+  transition: opacity 0.2s, box-shadow 0.2s;
 }
 
 .box {
   margin: 0;
+}
+
+.box.selected {
+  outline: 3px solid #2c3e50;
+  outline-offset: 2px;
+}
+
+/* Hover-driven dependency highlighting */
+.box-container.dimmed {
+  opacity: 0.3;
+}
+
+.box-container.highlight-self .box {
+  box-shadow: 0 0 0 3px #2c3e50, 0 4px 8px rgba(0, 0, 0, 0.25);
+}
+
+.box-container.highlight-uses .box {
+  box-shadow: 0 0 0 3px #2980b9, 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+.box-container.highlight-used-by .box {
+  box-shadow: 0 0 0 3px #e67e22, 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+/* Order frame */
+.order-frame {
+  position: relative;
+  border: 1.5px dashed #bdc3c7;
+  border-radius: 10px;
+  padding: 18px 14px 14px;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.order-label {
+  position: absolute;
+  top: -11px;
+  left: 14px;
+  background: white;
+  padding: 0 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #7f8c8d;
+}
+
+/* Detail panel */
+.detail-panel {
+  flex: 0 1 380px;
+  width: 380px;
+  max-width: 100%;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  z-index: 10;
+}
+
+.detail-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid #eee;
+  background: #f8f9fa;
+}
+
+.detail-panel-kind {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #7f8c8d;
+  margin-right: 8px;
+}
+
+.detail-panel-name {
+  font-weight: bold;
+  color: #2c3e50;
+}
+
+.detail-panel-close {
+  background: transparent;
+  color: #7f8c8d;
+  padding: 2px 8px;
+  font-size: 14px;
+  border-radius: 6px;
+}
+
+.detail-panel-close:hover {
+  background: #eee;
+  color: #333;
+}
+
+.detail-panel-body {
+  margin: 0;
+  padding: 14px 16px;
+  overflow: auto;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  color: #333;
 }
