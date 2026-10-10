@@ -387,7 +387,7 @@ function App() {
         {selectedBox && (
           <div className="detail-panel">
             <div className="detail-panel-header">
-              <div>
+              <div className="detail-panel-title" title={selectedBox.data.name}>
                 <span className="detail-panel-kind">{selectedBox.kind}</span>
                 <span className="detail-panel-name">{selectedBox.data.name}</span>
               </div>
